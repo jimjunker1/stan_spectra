@@ -9,7 +9,7 @@ library(sizeSpectra)
 N_ind = 2000
 xmin = 0.01
 xmax = 1000
-b = -2.4
+b = -1.4
 x_ind = rPLB(n = N_ind, b = b, xmin = xmin, xmax = xmax) # simulate individual masses from bounded power law
 
 
