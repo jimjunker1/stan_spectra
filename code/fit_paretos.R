@@ -27,23 +27,15 @@ N = length(c)
 fit_counts <- stan(file = "models/stan_pareto_truncated_counts.stan",
                    data = list(N = N, 
                                x = x,
-                               c = c,
-                               xmin = xmin,
-                               xmax = xmax))
+                               c = c))
 
 # Fit truncated Pareto with individuals (same as eightMethodsMEE MLE, but as Bayes) ----------------------------------------
 
 fit_individuals = stan(file = "models/stan_pareto_truncated_individualsMEE.stan",
                        data = list(N = N_ind, 
-                                   x = x_ind,
-                                   xmin = xmin,
-                                   xmax = xmax),
+                                   x = x_ind),
                        chains = 4,
                        iter = 2000)
-
-
-
-
 
 
 # Compare to eightMethodsX -------------------------------------------------
