@@ -6,60 +6,6 @@ library(janitor)
 library(sizeSpectra)
 library(ggridges)
 
-# 1) load data ----------------------------------------
-macro_fish_mat <- readRDS("data/macro_fish_mat.rds") 
-
-mle_mat <- read_csv("C:/Users/Jeff.Wesner/OneDrive - The University of South Dakota/USD/Github Projects/neon_size_spectra/data/derived_data/mle_mat.csv") %>% 
-  select(-ID) %>% 
-  left_join(macro_fish_mat %>% distinct(site_id, mat_s))
-
-# macro_fish_mat = macro_fish_mat %>% left_join(mle_mat) %>% 
-#   group_by(ID) %>% 
-#   mutate(xmin = min(dw),
-#          xmax = max(dw),
-#          x = dw,
-#          counts = no_m2) %>% 
-#   ungroup() %>%
-#   mutate(site_no = as.numeric(factor(site_id)),
-#          mat_s = (mat_site - mean(mat_site))/sd(mat_site))
-
-# 2) fit model ------------------------------------------------------------
-# prior predictive
-N = 1000
-prior_sim <- tibble(beta = rnorm(N, 0, 0.1),
-                    sigma_year = abs(rnorm(N, 0, 0.1)),
-                    sigma_site = abs(rnorm(N, 0, 0.1)),
-                    alpha_year_raw = rnorm(N, 0, 5),
-                    alpha_site_raw = rnorm(N, 0, 5),
-                    a = rnorm(N, -1.5, 0.2),
-                    .draw = 1:N) %>% 
-  mutate(intercept = a + sigma_year*alpha_year_raw + sigma_site*alpha_site_raw) %>% 
-  expand_grid(mat_s = seq(-2, 2, length.out = 20)) %>% 
-  mutate(y_pred = intercept + beta*mat_s)
-
-prior_sim %>% 
-  ggplot(aes(x = mat_s, y = y_pred, group = .draw)) + 
-  geom_line(alpha = 0.2)
-
-
-# fit full model
-macro_fish_mat = macro_fish_dw %>% 
-  group_by(ID) %>% 
-  mutate(xmin = min(dw),
-         xmax = max(dw)) %>% 
-  distinct() %>% 
-  ungroup() %>% 
-  # sample_n(size = 18000) %>%
-  # slice(1:50) %>%
-  filter(site_id %in% c("ARIK", "BIGC", "BLDE", "CUPE")) %>%
-  {.}
-
-site_id = macro_fish_mat %>% ungroup() %>% distinct(site_id, mat_s)
-site_id_site = tibble(site_id = site_id$site_id, 
-                      site = as.integer(as.factor(unique(macro_fish_mat$site_id)))) %>% 
-  left_join(site_id)
-
-
 # get fitted model
 mod_spectra = readRDS(file = "models/mod_spectra.rds")
 
@@ -99,14 +45,29 @@ sim_site_means <- mod_spectra %>%
 sim_site_means %>% 
   ggplot(aes(x = reorder(site_id, a_site), y = a_site)) +
   geom_violin(aes(group = mat_s)) + 
-  geom_point(data = mle_mat %>% ungroup %>% distinct(site_id, b), aes(x = reorder(site_id, b), y = b),
-             shape = 21, size = 1) + 
+  # geom_point(data = mle_mat %>% ungroup %>% distinct(site_id, b), aes(x = reorder(site_id, b), y = b),
+  #            shape = 21, size = 1) + 
   coord_flip() + 
   theme_ggdist() + 
   labs(y = "b exponent",
        x = "NEON site",
        caption = "Dots are the old b estimates from the SizeSpectra package. Posteriors are from the new Stan model")
 
+
+mod_regression = mod_spectra_siteminmax %>% 
+  as_draws_df() %>% 
+  select(a, beta, .draw) %>% 
+  expand_grid(mat_s = seq(-3, 3), length.out = 100) %>% 
+  mutate(b = a + beta*mat_s) %>% 
+  group_by(mat_s) %>% 
+  median_qi(b)
+
+
+mod_regression %>% 
+  ggplot(aes(x = mat_s, y = b)) + 
+  geom_line() + 
+  geom_ribbon(aes(ymin = .lower, ymax = .upper), alpha = 0.2) +
+  ylim(-1.6, -1.3)
 
 
 # Plot --------------------------------------------------------------------
