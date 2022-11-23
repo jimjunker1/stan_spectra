@@ -16,7 +16,7 @@ sim_data <- tibble(x = round(sims,3)) %>%
   mutate(xmin = xmin,
          xmax = xmax)
 
-fit_b_pareto_sim <- stan(file = "models/b_paretocounts_singlesample.stan",
+fit_b_pareto_sim <- stan(file = "models/old/b_paretocounts_singlesample.stan",
                          data = list(x = sim_data$x,
                                      N = nrow(sim_data),
                                      counts = sim_data$counts,
@@ -25,14 +25,39 @@ fit_b_pareto_sim <- stan(file = "models/b_paretocounts_singlesample.stan",
                          iter = 1000,
                          chains = 2) 
 
-saveRDS(fit_b_pareto_sim, file = "models/fit_b_pareto_sim.rds")
+saveRDS(fit_b_pareto_sim, file = "models/old/fit_b_pareto_sim.rds")
 
-fit_b_pareto_sim = readRDS(file = "models/fit_b_pareto_sim.rds")
+fit_b_pareto_sim = readRDS(file = "models/old/fit_b_pareto_sim.rds")
 
 summary_posts = as_draws_df(fit_b_pareto_sim) %>% 
   summarize(b = mean(b_exp),
             sd = sd(b_exp))
-  
+ 
+
+# 500 individuals
+
+sim_data <- tibble(x = round(sims,3)) %>% 
+  sample_n(500) %>% 
+  count(x, name = "counts") %>% 
+  mutate(xmin = xmin,
+         xmax = xmax)
+
+
+fit_500 <- stan(file = "models/old/b_paretocounts_singlesample.stan",
+                         data = list(x = sim_data$x,
+                                     N = nrow(sim_data),
+                                     counts = sim_data$counts,
+                                     xmax = sim_data$xmax,
+                                     xmin = sim_data$xmin),
+                         iter = 1000,
+                         chains = 2) 
+
+saveRDS(fit_500, file = "models/old/fit_500.rds")
+
+fit_500 = readRDS(file = "models/old/fit_500.rds")
+
+
+ 
 b_sim = rnorm(10, mean = summary_posts$b[1],
           sd = summary_posts$sd[1])
 
