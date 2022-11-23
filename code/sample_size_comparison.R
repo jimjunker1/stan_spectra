@@ -201,11 +201,11 @@ fit_neon_model = stan_model("models/stan_spectra_mod.stan")
 
 # iterate over 1:10 replicates for each of 11 sample sizes
 for (i in 1:2) {
-  for (j in seq(2,40, length.out = 4)) {
+  for (j in seq(0.1, 0.5, length.out = 3)) {
       
       data = neon_data %>% 
-        group_by(site_id_int, year) %>% 
-        sample_n(j)
+        group_by(site_id, year) %>% 
+        sample_frac(j)
       
       stan_dat = list(N = nrow(data),
                        mat_s = data$mat_s,
@@ -220,7 +220,7 @@ for (i in 1:2) {
       
       fit <- sampling(object = fit_neon_model,
                       data = stan_dat,
-                      iter = 100,
+                      iter = 1000,
                       chains = 1,
                       open_progress = F,
                       verbose = F)
@@ -239,6 +239,18 @@ for (i in 1:2) {
       }
 }
 
+mean_full = as_tibble(as.data.frame(extract(mod_spectra_siteminmax))) %>% 
+  lapply(mean) %>% as_tibble() %>% 
+  mutate(iter = 1, n = 1, 
+         statistic = "mean")
+
+sd_full = as_tibble(as.data.frame(extract(mod_spectra_siteminmax))) %>% 
+  lapply(sd) %>% as_tibble() %>% 
+  mutate(iter = 1, n = 1,
+         statistic = "sd")
+
+
+sample_sizedensity_sims_neon = bind_rows(sample_sizedensity_sims_neon, mean_full, sd_full)
 saveRDS(sample_sizedensity_sims_neon, "models/sample_size_simulations/sample_sizedensity_sims_neon.rds")
 
 
@@ -248,8 +260,40 @@ sample_sizedensity_sims_neon %>%
   pivot_longer(cols = c(-statistic, -iter, -n)) %>% 
   pivot_wider(names_from = statistic, values_from = value) %>% 
   ggplot(aes(x = n, y = sd)) + 
-  geom_jitter(height = 0, width = 0.2)
+  geom_jitter(height = 0, width = 0.02)
 
+
+a = sample_sizedensity_sims_neon %>% 
+  filter(n != 1) %>% 
+  select(-lp__) %>% 
+  janitor::remove_empty(which = "rows") %>% 
+  pivot_longer(cols = c(-statistic, -iter, -n)) %>% 
+  pivot_wider(names_from = statistic, values_from = value) %>% 
+  rename(mean_partial = mean,
+         sd_partial = sd,
+         n_partial = n)
+
+b = sample_sizedensity_sims_neon %>% 
+  filter(n == 1) %>% 
+  select(-lp__) %>% 
+  janitor::remove_empty(which = "rows") %>% 
+  pivot_longer(cols = c(-statistic, -iter, -n)) %>% 
+  pivot_wider(names_from = statistic, values_from = value) %>% 
+  rename(mean_full = mean,
+         sd_full = sd,
+         n_full = n)
+
+compare_params = left_join(a, b)
+
+compare_params %>% 
+  ggplot(aes(y = mean_partial, x = mean_full)) + 
+  geom_point() + 
+  facet_wrap(~n_partial, scales = "free")
+
+compare_params %>% 
+  ggplot(aes(y = sd_partial, x = sd_full)) + 
+  geom_point() + 
+  facet_wrap(~n_partial, scales = "free")
 
 
 
