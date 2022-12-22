@@ -15,10 +15,10 @@ fit_model = stan_model("models/old/b_paretocounts_singlesample.stan")
 # iterate over 1:10 replicates for each of 11 sample sizes
 for (i in 1:10) {
   for (j in 2^seq(1, 11)) {
-    for(k in seq(-2.2, -1.2, length.out = 3)) {
+    for(k in seq(-2, -1.2, length.out = 3)) {
     n_sim = 3000
-    xmax = 10000
-    xmin = 0.001
+    xmax = 215000
+    xmin = 0.003
     b = k
     u = runif(n_sim, min = 0, max = 1)
     
@@ -44,7 +44,7 @@ for (i in 1:10) {
                     open_progress = F,
                     verbose = F)
     
-    b_exp = as.data.frame(extract(fit, pars = "b_exp")) 
+    b_exp = as.data.frame(rstan::extract(fit, pars = "b_exp")) 
     
     sample_size_sims <- sample_size_sims %>%
       add_row(iter = i,
@@ -57,13 +57,15 @@ for (i in 1:10) {
 
 saveRDS(sample_size_sims, "models/sample_size_simulations/sample_size_sims.rds")
 
-b_lines = tibble(b = c(-2.2, -1.7, -1.2),
-                 b_known = c(-2.2, -1.7, -1.2),
+sample_size_sims = readRDS("models/sample_size_simulations/sample_size_sims.rds")
+
+b_lines = tibble(b = c(-2, -1.6, -1.2),
+                 b_known = c(-2, -1.6, -1.2),
                  sd = NA) %>% 
   pivot_longer(cols = -b_known)
 
 sample_size_sims %>% 
-  mutate(b_known = rep(rep(c(-2.2, -1.7, -1.2),11),10)) %>% 
+  mutate(b_known = rep(rep(c(-2, -1.6, -1.2),11),10)) %>% 
   pivot_longer(cols = c(b, sd)) %>% 
   ggplot(aes(x = n, y = value)) + 
   facet_wrap(b_known~name, scales = "free", ncol = 2) +
@@ -73,8 +75,27 @@ sample_size_sims %>%
   geom_hline(data = b_lines, aes(yintercept = value))
 
 
+sample_size_plot = sample_size_sims %>% 
+  mutate(b_known = rep(rep(c(-2, -1.6, -1.2),11),10)) %>% 
+  pivot_longer(cols = c(b, sd)) %>% 
+  filter(name == "b") %>% 
+  ggplot(aes(x = n, y = value)) + 
+  facet_wrap(~b_known, scales = "free", ncol = 3) +
+  geom_point(size = 0.1) +
+  labs(x = "Number of individual body sizes in a sample",
+       y = "lambda") + 
+  scale_x_log10() +
+  geom_hline(data = b_lines, aes(yintercept = value)) + 
+  theme_default()
+
+library(ggview)
+ggview(sample_size_plot, width = 6, height = 2, units = "in")
+ggsave(sample_size_plot, width = 6, height = 2, units = "in", 
+       file = "plots/sample_size_plot.jpg")
+saveRDS(sample_size_plot, file = "plots/sample_size_plot.rds")
+
 sample_size_sims %>% 
-  mutate(b_known = rep(rep(c(-2.2, -1.7, -1.2),11),10)) %>% 
+  mutate(b_known = rep(rep(c(-2, -1.6, -1.2),11),10)) %>% 
   # pivot_longer(cols = c(b, sd)) %>% 
   ggplot(aes(x = n, y = b)) + 
   facet_wrap(~b_known, scales = "free", ncol = 1) +
@@ -169,10 +190,6 @@ sample_sizedensity_sims %>%
   labs(x = "Number of individuals measured (before combining to densities)") + 
   scale_x_log10() +
   geom_hline(data = b_lines, aes(yintercept = value))
-
-
-
-
 
 
 # How many size/density groups for NEON data? -----------------------------

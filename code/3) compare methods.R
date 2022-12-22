@@ -3,6 +3,7 @@ library(sizeSpectra)
 library(brms)
 library(tidybayes)
 source("code/functions.R")
+rstan_options("auto_write" = TRUE)
 
 # load data
 macro_fish_mat = readRDS(file = "data/macro_fish_mat.rds")
