@@ -120,7 +120,7 @@ for(i in 1:20){
   intercept = -1.5
   var_int_sd = 0.1
   beta = -0.1
-  n_ind = 300
+  n_ind = 500
   
   lambda_sims = tibble(group = (1:3)) %>% 
     mutate(offset = rnorm(nrow(.), 0, var_int_sd),
@@ -358,7 +358,17 @@ ggview(plot_linear_model_bias, width = 6.5, height = 2.5, units = "in")
 
 ggsave(plot_linear_model_bias, width = 6.5, height = 2.5, units = "in",
        file = "plots/plot_linear_model_bias.jpg", dpi = 600)
+
 saveRDS(plot_linear_model_bias, file = "plots/plot_linear_model_bias.rds")
+
+
+var_reg_bias %>% 
+  group_by(model_run, name, true_value) %>% 
+  summarize(median = median(value)) %>% 
+  mutate(bias = median - true_value) %>% 
+  ggplot(aes(x = bias, y = name)) + 
+  geom_point() + 
+  facet_wrap(~name)
 
 
 var_reg_bias %>% 

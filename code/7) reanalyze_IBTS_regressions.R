@@ -102,6 +102,8 @@ fit_ibts_norand = sampling(object = stan_spectra_mod_ibts_temperature_norand,
 
 saveRDS(fit_ibts_norand, file = "models/fit_ibts_norand_norand.rds")
 
+fit_ibts_norand = readRDS(file = "models/fit_ibts_norand_norand.rds")
+
 ibts_posts_norand = as_draws_df(fit_ibts_norand) 
 
 ibts_conds_norand = ibts_posts_norand %>% 
@@ -159,7 +161,7 @@ bayes_mle_regression_lines = ibts_conds %>%
   group_by(mat_s, year) %>% 
   select(!contains("alpha_raw")) %>%
   mean_qi(lambda) %>% 
-  mutate(method = "c) Bayesian - hierarchical") %>% 
+  mutate(method = "b) Bayesian - hierarchical") %>% 
   bind_rows(edwards_mle_estimates,
             ibts_conds_norand_summary,
             ibts_conds_norand_summary %>% mutate(method = "b) Bayesian - not hierarchical"))
