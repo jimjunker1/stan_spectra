@@ -47,11 +47,11 @@ model {
   alpha_raw_site ~ std_normal();
   
   //hyperpriors
-  target += exponential_lpdf(sigma_year|9); 
+  target += exponential_lpdf(sigma_year|4); 
 	target += normal_lpdf(beta_mat|0, 0.1);
 	target += normal_lpdf(beta_gpp|0, 0.1);
 	target += normal_lpdf(beta_gpp_mat|0, 0.1);
-	target += exponential_lpdf(sigma_site|9);
+	target += exponential_lpdf(sigma_site|4);
 	
 }
 
