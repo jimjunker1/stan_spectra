@@ -6,20 +6,100 @@ library(janitor)
 library(sizeSpectra)
 library(ggridges)
 
-# get fitted model
-mod_spectra = readRDS(file = "models/mod_spectra.rds")
 
-sim_regressions <- mod_spectra %>% 
+# lambda models -----------------------------------------------------------
+
+# model
+mod_spectra = readRDS(file = "models/fit_interaction.rds")
+
+# data
+macro_fish_mat_siteminmax = readRDS(file = "data/macro_fish_mat_siteminmax.rds") 
+
+# posts for ids
+id_posts <- mod_spectra %>% 
   as_draws_df() %>% 
   pivot_longer(cols = contains("raw_site")) %>% 
-  mutate(site = as.integer(parse_number(name)),
+  mutate(ID = as.integer(parse_number(name)),
          model = "bayes") %>% 
-  select(name, value, site, sigma_site, a, beta, .draw) %>% 
-  left_join(macro_fish_mat %>% ungroup %>% distinct(site_id, site_id_int, mat_s) %>% rename(site = site_id_int)) %>%
+  select(name, value, ID, sigma_site, a, contains("beta"), .draw) %>% 
+  left_join(macro_fish_mat_siteminmax %>% 
+              ungroup %>% 
+              distinct(ID, site_id, site_id_int, mat_s, log_gpp_s)) %>%
   mutate(offset = sigma_site*value) %>%
-  mutate(a_site = a + beta*mat_s) %>% 
-  group_by(name, site_id, mat_s) %>% 
-  median_qi(a_site) 
+  mutate(lambda = a + beta_mat*mat_s + beta_gpp*log_gpp_s + beta_gpp_mat*log_gpp_s*mat_s + offset) 
+
+id_summaries = id_posts %>% 
+  group_by(ID, site_id, mat_s, log_gpp_s) %>% 
+  median_qi(lambda) 
+
+saveRDS(id_summaries, file = "posteriors/id_summaries.rds")
+
+# posts for regression
+# temperature on the x axis with 3 gpp levels
+gpp_conds = macro_fish_mat_siteminmax %>% ungroup %>% 
+  distinct(log_gpp_s) %>% 
+  summarize(log_gpp_s = quantile(log_gpp_s, c(0.1, 0.5, 0.9)))
+
+mat_conds = seq(min(macro_fish_mat_siteminmax$mat_s), max(macro_fish_mat_siteminmax$mat_s), 
+                length.out = 15)
+
+temp_x_regression = as_draws_df(mod_spectra) %>% select(contains("beta"), a) %>% 
+  expand_grid(mat_s = mat_conds) %>% 
+  expand_grid(gpp_conds) %>% 
+  mutate(lambda =  a + beta_mat*mat_s + beta_gpp*log_gpp_s + beta_gpp_mat*log_gpp_s*mat_s)
+
+temp_x_summaries = temp_x_regression %>% 
+  group_by(mat_s, log_gpp_s) %>% 
+  median_qi(lambda)
+
+saveRDS(temp_x_summaries, file = "posteriors/temp_x_summaries.rds")
+
+
+# gpp on the x axis with 3 temp levels
+
+mat_conds = macro_fish_mat_siteminmax %>% ungroup %>% 
+  distinct(mat_s) %>% 
+  summarize(mat_s = quantile(mat_s, c(0.1, 0.5, 0.9)))
+
+gpp_conds = seq(min(macro_fish_mat_siteminmax$log_gpp_s), max(macro_fish_mat_siteminmax$log_gpp_s), 
+                length.out = 15)
+
+gpp_x_regression = as_draws_df(mod_spectra) %>% select(contains("beta"), a) %>% 
+  expand_grid(log_gpp_s = gpp_conds) %>% 
+  expand_grid(mat_conds) %>% 
+  mutate(lambda =  a + beta_mat*mat_s + beta_gpp*log_gpp_s + beta_gpp_mat*log_gpp_s*mat_s)
+
+gpp_x_summaries = gpp_x_regression %>% 
+  group_by(mat_s, log_gpp_s) %>% 
+  median_qi(lambda)
+
+
+saveRDS(gpp_x_summaries, file = "posteriors/gpp_x_summaries.rds")
+
+
+# biomass models ----------------------------------------------------------
+
+gpp_conds = macro_fish_mat_siteminmax %>% ungroup %>% 
+  distinct(log_gpp_s) %>% 
+  summarize(log_gpp_s = quantile(log_gpp_s, c(0.1, 0.5, 0.9)))
+
+mat_conds = tibble(mat_s = seq(min(macro_fish_mat_siteminmax$mat_s), max(macro_fish_mat_siteminmax$mat_s), 
+                length.out = 15))
+
+mod_biomass = readRDS(file = "models/mod_biomass.rds")
+
+library(tidybayes)
+biomass_posts = mat_conds %>% 
+  expand_grid(gpp_conds) %>% 
+  add_epred_draws(mod_biomass, re_formula = NA)
+
+saveRDS(biomass_posts, file = "posteriors/biomass_posts.rds")
+
+
+
+# other -------------------------------------------------------------------
+
+
 
 sim_regressions %>% 
   ggplot(aes(x = mat_s, y = a_site)) + 

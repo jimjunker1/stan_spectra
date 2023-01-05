@@ -4,13 +4,16 @@ library(janitor)
 gpp = readRDS("data/gpp_means.rds") %>% clean_names() %>% 
   rename(gpp = mean, gpp_sd = sd) %>% 
   mutate(log_gpp = log(gpp),
-         gpp_s = scale(gpp, center = T, scale = T),
-         gpp_s = as.numeric(gpp_s)) 
+         log_gpp_s = scale(log_gpp, center = T, scale = T),
+         log_gpp_s = as.numeric(log_gpp_s),
+         gpp_s = scale(gpp, center = T, scale = T)) 
 
-macro_fish_mat_siteminmax <- readRDS("data/macro_fish_mat.rds") %>% # this is really site max and global min
+macro_fish_mat = readRDS("data/macro_fish_mat.rds")
+
+macro_fish_mat_siteminmax <- macro_fish_mat %>% # this is really site max and global min
   left_join(gpp) %>% 
-  filter(!is.na(gpp_s)) %>% 
-  group_by(mat_s, gpp_s, gpp, site_id, year, ID, mat_site, sdat_site, dw, x) %>% 
+  filter(!is.na(log_gpp_s)) %>% 
+  group_by(mat_s, log_gpp_s, gpp_s, gpp, log_gpp, site_id, year, ID, mat_site, sdat_site, dw, x) %>% 
   summarize(counts = sum(counts)) %>% 
   ungroup %>% 
   mutate(site_id_int = as.integer(as.factor(ID))) %>% 
@@ -22,6 +25,18 @@ macro_fish_mat_siteminmax <- readRDS("data/macro_fish_mat.rds") %>% # this is re
 
 saveRDS(macro_fish_mat_siteminmax, file = "data/macro_fish_mat_siteminmax.rds")
 
-length(unique(macro_fish_mat_siteminmax$ID))
+
+
+# biomass -----------------------------------------------------------------
+
+biomass = macro_fish_mat %>% # this is really site max and global min
+  left_join(gpp) %>% 
+  filter(!is.na(log_gpp_s)) %>% 
+  filter(animal_type == "macroinvertebrates") %>% 
+  mutate(dw_total = x*counts) %>% 
+  group_by(mat_s, log_gpp_s, gpp_s, gpp, log_gpp, site_id, year, ID, mat_site, sdat_site) %>% 
+  summarize(sample_biomass = sum(dw_total)/1000)
+
+saveRDS(biomass, file = "data/biomass.rds")
 
 
