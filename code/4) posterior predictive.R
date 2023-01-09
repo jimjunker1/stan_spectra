@@ -4,71 +4,40 @@ library(janitor)
 library(tidybayes)
 library(brms)
 
-macro_fish_thin <- readRDS("data/macro_fish_thin.rds") %>% ungroup 
-mod_spectra <- readRDS("models/mod_spectra.rds")
-bayes_sim_tibble = readRDS("data/bayes_sim_tibble.rds")
+interaction_posts_wrangled = readRDS(file = "posteriors/interaction_posts_wrangled.rds")
+temp_posts_wrangled = readRDS(file = "posteriors/temp_posts_wrangled.rds")
+dat = readRDS(file = "data/macro_fish_mat_siteminmax.rds") 
 
-# get posts
-summary_posts = as_draws_df(mod_spectra) %>% 
-  summarize(b = mean(a),
-            sd = sd(a))
+sim_postpreds = function(model, sample_n = 10000){
+  interaction_posts_wrangled %>% 
+    filter(.draw <= 10) %>% 
+    right_join(dat) %>% 
+    mutate(u = runif(nrow(.), 0, 1)) %>% # uniform draw
+    mutate(x = (u*xmax^(lambda+1) +  (1-u) * xmin^(lambda+1) ) ^ (1/(lambda+1))) %>% 
+    mutate(data = "y_rep") %>% 
+    bind_rows(dat %>% 
+                mutate(data = "y_raw") %>% 
+                mutate(.draw = 0)) %>% 
+    rename(sim = x) %>% 
+    group_by(.draw) %>% 
+    sample_n(sample_n, weight = counts, replace = T) %>% 
+    select(sim, .draw, data, site_id, year, sample_id_int)
+  
+}
 
-# draw b's from posterior
-b = rnorm(10, mean = summary_posts_ibts$b[1],
-          sd = summary_posts_ibts$sd[1])
-
-
-# simulate the full data set ----------------------------------------------
-
-y_reps = macro_fish_thin %>% 
-  mutate(u = runif(nrow(.), min = 0, max = 1)) %>% # uniform draw
-  expand_grid(b = b) %>%                           # add b draws
-  mutate(y_rep = (u*xmax^(b+1) +  (1-u) * xmin^(b+1) ) ^ (1/(b+1)), # simulate
-         sim = as.integer(as.factor(b))) %>% # add identifier
-  select(y_rep, sim, no_m2) %>% 
-  mutate(data = "y_rep") %>% 
-  rename(y = y_rep) %>%
-  bind_rows(macro_fish_thin %>% mutate(sim = 0,
-                                       data = "y_raw") %>% 
-              select(data, sim, dw, no_m2) %>% 
-              rename(y = dw)) 
-
-y_reps %>% 
-  ggplot(aes(x = y*no_m2, fill = data, group = sim)) + 
-  geom_histogram(bins = 50) +
-  facet_wrap(~sim) +
-  scale_x_log10() +
+sim_postpreds(interaction_posts_wrangled) %>%
+  filter(sample_id_int == 5) %>% 
+  ggplot(aes(x = .draw, y = sim, color = data, group = .draw)) + 
+  geom_violin() +
+  scale_y_log10() +
   NULL
 
-
-macro_fish_thin %>% 
-  mutate(u = runif(nrow(.), min = 0, max = 1)) %>% # uniform draw
-  expand_grid(b = b) %>%                           # add b draws
-  mutate(y_rep = (u*xmax^(b+1) +  (1-u) * xmin^(b+1) ) ^ (1/(b+1)), # simulate
-         sim = as.integer(as.factor(b))) %>% 
-  filter(sim <= 1) %>% 
-  ggplot(aes(x = y_rep*no_m2, y = dw*no_m2)) +
-  geom_point(size = 0.1) + 
+sim_postpreds(temp_posts_wrangled) %>% 
+  filter(sample_id_int <= 40) %>% 
+  ggplot(aes(x = sim, color = data, group = .draw)) +
+  geom_density() +
   scale_x_log10() +
-  scale_y_log10() + 
-  geom_abline()
+  facet_wrap(~sample_id_int, scales = "free_y") +
+  NULL
 
-
-macro_fish_thin %>% 
-  mutate(u = runif(nrow(.), min = 0, max = 1)) %>% # uniform draw
-  expand_grid(b = b) %>%                           # add b draws
-  mutate(y_rep = (u*xmax^(b+1) +  (1-u) * xmin^(b+1) ) ^ (1/(b+1)), # simulate
-         sim = as.integer(as.factor(b)),
-         obs_exp = y_rep - dw) %>% 
-  group_by(sim) %>% 
-  mutate(greater_than = case_when(obs_exp > 0 ~ 1, 
-                                  TRUE ~ 0)) %>% 
-  summarize(p_value = sum(greater_than)/nrow(.))
-
-
-# simulate by site ----------------------------------------------
-macro_fish_thin %>% 
-  mutate(year = as.integer(as.factor(macro_fish_thin$year))) %>% 
-  distinct(site_id_int, year, xmin, xmax, no_m2) %>% 
-  rename(counts = no_m2)
 

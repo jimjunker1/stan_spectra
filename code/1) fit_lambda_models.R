@@ -9,7 +9,7 @@ macro_fish_mat_siteminmax = readRDS(file = "data/macro_fish_mat_siteminmax.rds")
 
 # compile model
 stan_spectra_mod_gpp_x_temp = stan_model("models/stan_spectra_mod_gpp_x_temp.stan")
-stan_spectra_mod_temponly = stan_model("models/stan_spectra_mod_temponly.stan")
+# stan_spectra_mod_temponly = stan_model("models/stan_spectra_mod_temponly.stan")
 
 
 # make data and fit model ---------------------------------------------------------
@@ -21,8 +21,8 @@ stan_data_interaction = list(N = nrow(dat),
                              gpp_s = dat$log_gpp_s,
                              year = as.integer(as.factor(dat$year)),
                              n_years = length(unique(dat$year)),
-                             n_sites = length(unique(dat$site_id_int)),
-                             site = dat$site_id_int,
+                             n_sites = length(unique(dat$sample_id_int)),
+                             site = dat$sample_id_int,
                              counts = dat$counts,
                              x = dat$x,
                              xmin = dat$xmin,

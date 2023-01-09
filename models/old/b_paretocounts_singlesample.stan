@@ -19,10 +19,21 @@ parameters {
 	real lambda;
 }
 
-
 model {
 	lambda ~ normal(-2, 1);
 	for (i in 1:N){
 	  x[i] ~ paretocounts(lambda, xmin[i], xmax[i], counts[i]);
 	  }
 }
+
+generated quantities{
+  vector[N] log_lik;
+  vector[N] temp;{
+        for(i in 1:N) {
+        temp[i] = paretocounts_lpdf(x[i] | lambda, xmin[i], xmax[i], counts[i]);
+        }
+      }
+    log_lik = to_vector(temp);
+}
+
+

@@ -1,32 +1,55 @@
 library(tidyverse)
 library(brms)
 library(rstan)
-library(tidybayes)
-library(janitor)
-library(sizeSpectra)
-library(ggridges)
 
 
 # lambda models -----------------------------------------------------------
 
-# model
-mod_spectra = readRDS(file = "models/fit_interaction.rds")
+# models
+fit_interaction = readRDS(file = "models/fit_interaction.rds")
+fit_temponly = readRDS(file = "models/fit_temponly.rds")
 
 # data
-macro_fish_mat_siteminmax = readRDS(file = "data/macro_fish_mat_siteminmax.rds") 
+dat = readRDS(file = "data/macro_fish_mat_siteminmax.rds") 
 
 # posts for ids
-id_posts <- mod_spectra %>% 
-  as_draws_df() %>% 
-  pivot_longer(cols = contains("raw_site")) %>% 
-  mutate(ID = as.integer(parse_number(name)),
-         model = "bayes") %>% 
-  select(name, value, ID, sigma_site, a, contains("beta"), .draw) %>% 
-  left_join(macro_fish_mat_siteminmax %>% 
-              ungroup %>% 
-              distinct(ID, site_id, site_id_int, mat_s, log_gpp_s)) %>%
-  mutate(offset = sigma_site*value) %>%
-  mutate(lambda = a + beta_mat*mat_s + beta_gpp*log_gpp_s + beta_gpp_mat*log_gpp_s*mat_s + offset) 
+
+wrangle_posts = function(model, name = NA, data = NA, group1 = "alpha_raw_site", group2 = "alpha_raw_year"){
+  model %>% 
+    as_draws_df() %>% 
+    pivot_longer(cols = contains(group1),
+                 names_to = "sample_id_int", values_to = "sample_offset") %>% 
+    pivot_longer(cols = contains(group2),
+                 names_to = "year_id", values_to = "year_offset") %>% 
+    mutate(sample_id_int = as.integer(parse_number(sample_id_int)),
+           year_id = as.integer(as.factor(parse_number(year_id))),
+           model = name) %>% 
+    select(sample_id_int, year_id, sample_offset, year_offset, sigma_site, sigma_year, a, contains("beta"), .draw, model) %>% 
+    right_join(data %>% 
+                 ungroup %>% 
+                 distinct(site_id, year_id, year, sample_id_int, mat_s, log_gpp_s))  
+}
+
+
+interaction_posts_wrangled = wrangle_posts(model = fit_interaction, data = dat, name = "interaction") %>% 
+  mutate(sample_offset = sigma_site*sample_offset,
+         year_offset = sigma_year*year_offset) %>%
+  mutate(lambda = a + beta_mat*mat_s + beta_gpp*log_gpp_s + beta_gpp_mat*log_gpp_s*mat_s + 
+           sample_offset +
+           year_offset) %>% 
+  ungroup
+
+temp_posts_wrangled = wrangle_posts(model = fit_temponly, data = dat, name = "temponly") %>% 
+  mutate(sample_offset = sigma_site*sample_offset,
+         year_offset = sigma_year*year_offset) %>%
+  mutate(lambda = a + beta_mat*mat_s + 
+           sample_offset +
+           year_offset) %>% 
+  ungroup
+
+saveRDS(interaction_posts_wrangled, file = "posteriors/interaction_posts_wrangled.rds")
+saveRDS(temp_posts_wrangled, file = "posteriors/temp_posts_wrangled.rds")
+
 
 id_summaries = id_posts %>% 
   group_by(ID, site_id, mat_s, log_gpp_s) %>% 
@@ -36,14 +59,14 @@ saveRDS(id_summaries, file = "posteriors/id_summaries.rds")
 
 # posts for regression
 # temperature on the x axis with 3 gpp levels
-gpp_conds = macro_fish_mat_siteminmax %>% ungroup %>% 
+gpp_conds = dat %>% ungroup %>% 
   distinct(log_gpp_s) %>% 
   summarize(log_gpp_s = quantile(log_gpp_s, c(0.1, 0.5, 0.9)))
 
-mat_conds = seq(min(macro_fish_mat_siteminmax$mat_s), max(macro_fish_mat_siteminmax$mat_s), 
+mat_conds = seq(min(dat$mat_s), max(dat$mat_s), 
                 length.out = 15)
 
-temp_x_regression = as_draws_df(mod_spectra) %>% select(contains("beta"), a) %>% 
+temp_x_regression = as_draws_df(fit_interaction) %>% select(contains("beta"), a) %>% 
   expand_grid(mat_s = mat_conds) %>% 
   expand_grid(gpp_conds) %>% 
   mutate(lambda =  a + beta_mat*mat_s + beta_gpp*log_gpp_s + beta_gpp_mat*log_gpp_s*mat_s)
@@ -57,14 +80,14 @@ saveRDS(temp_x_summaries, file = "posteriors/temp_x_summaries.rds")
 
 # gpp on the x axis with 3 temp levels
 
-mat_conds = macro_fish_mat_siteminmax %>% ungroup %>% 
+mat_conds = dat %>% ungroup %>% 
   distinct(mat_s) %>% 
   summarize(mat_s = quantile(mat_s, c(0.1, 0.5, 0.9)))
 
-gpp_conds = seq(min(macro_fish_mat_siteminmax$log_gpp_s), max(macro_fish_mat_siteminmax$log_gpp_s), 
+gpp_conds = seq(min(dat$log_gpp_s), max(dat$log_gpp_s), 
                 length.out = 15)
 
-gpp_x_regression = as_draws_df(mod_spectra) %>% select(contains("beta"), a) %>% 
+gpp_x_regression = as_draws_df(fit_interaction) %>% select(contains("beta"), a) %>% 
   expand_grid(log_gpp_s = gpp_conds) %>% 
   expand_grid(mat_conds) %>% 
   mutate(lambda =  a + beta_mat*mat_s + beta_gpp*log_gpp_s + beta_gpp_mat*log_gpp_s*mat_s)
@@ -79,11 +102,11 @@ saveRDS(gpp_x_summaries, file = "posteriors/gpp_x_summaries.rds")
 
 # biomass models ----------------------------------------------------------
 
-gpp_conds = macro_fish_mat_siteminmax %>% ungroup %>% 
+gpp_conds = dat %>% ungroup %>% 
   distinct(log_gpp_s) %>% 
   summarize(log_gpp_s = quantile(log_gpp_s, c(0.1, 0.5, 0.9)))
 
-mat_conds = tibble(mat_s = seq(min(macro_fish_mat_siteminmax$mat_s), max(macro_fish_mat_siteminmax$mat_s), 
+mat_conds = tibble(mat_s = seq(min(dat$mat_s), max(dat$mat_s), 
                 length.out = 15))
 
 mod_biomass = readRDS(file = "models/mod_biomass.rds")
@@ -99,8 +122,6 @@ saveRDS(biomass_posts, file = "posteriors/biomass_posts.rds")
 
 # other -------------------------------------------------------------------
 
-
-
 sim_regressions %>% 
   ggplot(aes(x = mat_s, y = a_site)) + 
   geom_line() + 
@@ -113,7 +134,7 @@ sim_regressions %>%
 
 
 
-sim_site_means <- mod_spectra %>% 
+sim_site_means <- fit_interaction %>% 
   as_draws_df() %>% 
   pivot_longer(cols = contains("raw_site")) %>% 
   mutate(offset = sigma_site*value) %>%
@@ -246,103 +267,5 @@ line_sim %>%
                filter(group == 1:9)  , aes(x = dw, y = cumPropsim)) +
   NULL
 
-
-
-
-# Posterior Predictive ----------------------------------------------------
-
-# 1) get posterior mean and sd for chosen parameters
-post_mean_sd_parameter = as_draws_df(mod_spectra) %>% as_tibble() %>% clean_names() %>% 
-  select(a) %>%  # change for different parameters/groups
-  summarize(b = mean(a),
-            sd = sd(a)) %>% 
-  expand_grid(site_id = macro_fish_mat %>% ungroup %>% distinct(site_id) %>% pull())
-
-# 2) simulate y_pred
-sim_ypred <- macro_fish_mat %>% 
-  left_join(post_mean_sd_parameter) %>%       # add posterior mean/sd/upper/lower
-  expand_grid(sim = 1:10) %>%                 # number of data sets to simulate
-  mutate(u = runif(nrow(.))) %>%              # uniform sample for simulation
-  mutate(y_pred = (u*xmax^(b+1) +  (1-u) * xmin^(b+1) ) ^ (1/(b+1))) %>% # simulate y_pred (via Edwards github for rPLB) - confirmed in code/rplb_by_hand.R
-  group_by(ID) %>% 
-  mutate(rank = rank(y_pred)) %>%             # rank within groups
-  mutate(group = paste(site_id, year, sep = "_")) %>%  # clean up to combine with raw data
-  mutate(y_pred = round(y_pred, 5)) %>%
-  select(ID,site_id, y_pred, sim) %>%
-  group_by(ID, y_pred, site_id, sim) %>%
-  count(y_pred) %>%
-  mutate(model = "y_pred") %>% 
-  rename(dw = y_pred,
-         no_m2 = n)
-
-# 3) get counts of organisms and cumulative counts...
-sim_bayes_counts = sim_ypred %>% 
-  mutate(group = paste(ID, sim, sep = "_")) %>% 
-  select(dw, no_m2, group) %>% ungroup() %>% 
-  group_by(dw, group) %>% 
-  summarize(Count = sum(no_m2)) %>% 
-  arrange(group, desc(dw)) %>% 
-  group_by(group) %>% 
-  mutate(cumSum = cumsum(Count),
-         cumProp = cumSum / sum(Count),
-         length = ceiling(sum(Count))) 
-
-# 4) then generate sequence of values to simulate over
-sim_bayes_sim <- sim_bayes_counts %>% 
-  dplyr::group_by(group, length) %>% 
-  dplyr::summarize(min_cumProp = min(cumProp)) %>% 
-  dplyr::group_by(group) %>% 
-  dplyr::do(dplyr::tibble(cumPropsim = seq(.$min_cumProp, 1, length = .$length/10))) # dividing by something reduces file size by limiting iterations, but check for accuracy
-
-# 5) then simulate cumulative proportion data to plot against MLE estimates by group
-# make lists first
-sim_bayes_simlist <- sim_bayes_sim %>% dplyr::group_by(group) %>% dplyr::group_split() 
-sim_bayes_countslist <- sim_bayes_counts %>% dplyr::group_by(group) %>% dplyr::group_split() 
-bayes_sim_ypred = list() # empty list to population
-
-# simulate data with for loop
-for(i in 1:length(sim_bayes_simlist)){
-  bayes_sim_ypred[[i]] = sim_bayes_simlist[[i]] %>% dplyr::as_tibble() %>% 
-    dplyr::mutate(dw = sim_bayes_countslist[[i]][findInterval(sim_bayes_simlist[[i]]$cumPropsim,
-                                                              sim_bayes_countslist[[i]]$cumProp), ]$dw)
-}
-
-# 6) Create data frame with simulated data to plot
-bayes_sim_ypred_tibble <- dplyr::bind_rows(bayes_sim_ypred) %>% # dots to plot...very large file
-  mutate(model = "y_pred")
-
-
-
-# 7) combine with raw sims
-y_pred_raw = bind_rows(bayes_sim_ypred_tibble %>% separate(group, c("group","sim", sep = "_")) %>% mutate(group = as.numeric(group),
-                                                                                                          sim = as.numeric(sim)), 
-                       bayes_sim_tibble %>% mutate(model = "y_raw", sim = -1))
-
-# sim_raw = bayes_sim_tibble %>%
-#   mutate(model = "y_bayes_sim",
-#          sim = -1,
-#          site_id = str_sub(group, 1, 4)) %>%
-#   mutate(ID = as.integer(as.factor(group))) %>%
-#   select(-site_id) %>%
-#   right_join(macro_fish_mat %>% ungroup %>% distinct(site_id, ID))
-
-
-
-# combine y_raw and y_pred
-# y_pred_raw = bind_rows(sim_ypred, sim_raw)
-
-
-# plot
-y_pred_raw %>% 
-  # filter(dw != 0) %>% 
-  # mutate(ID = as.factor(ID),
-  #        sim = as.factor(sim)) %>% 
-  ggplot(aes(y = dw, fill = model, x = sim)) + 
-  geom_boxplot(aes(group = interaction(model, sim)),
-               outlier.shape = NA) + 
-  # geom_jitter(width = 0.1, height = 0, size = 0.1) +
-  # facet_wrap(~site_id) +
-  scale_y_log10() +
-  NULL
 
 
