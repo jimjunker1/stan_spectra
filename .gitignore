@@ -1,4 +1,32 @@
+# R project and user data
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
+
+# Ignore folders
+ignore/
+
+# ignore micorsoft office related temp files from repository 
+*.tmp
+
+# Word temporary
+~$*.doc*
+
+# Word Auto Backup File
+Backup of *.doc*
+
+# Excel temporary
+~$*.xls*
+
+# Excel Backup File
+*.xlk
+
+# PowerPoint temporary
+~$*.ppt*
+
+# Visio autosave temporary files
+*.~vsd*
+
+.secrets
+
