@@ -6,11 +6,64 @@ library(rstan)
 # lambda models -----------------------------------------------------------
 
 # models
-fit_interaction = readRDS(file = "models/fit_interaction.rds")
+fit_interaction = readRDS(file = "models/fit_interaction_sites.rds")
 fit_temponly = readRDS(file = "models/fit_temponly.rds")
+fit_interaction_sites = readRDS(file = "models/fit_interaction_sites.rds")
 
 # data
 dat = readRDS(file = "data/macro_fish_mat_siteminmax.rds") 
+
+# extract posts
+posts_interaction = as_draws_df(fit_interaction)
+posts_temponly = as_draws_df(fit_temponly)
+
+posts_interaction %>% select(contains("sigma")) %>% 
+  pivot_longer(cols = everything()) %>% 
+  group_by(name) %>% 
+  median_qi(value)
+
+posts_pivoted = posts_interaction %>% 
+  pivot_longer(cols = contains("alpha_raw_sample"),
+               names_to = "sample_id", values_to = "sample_offset") %>% 
+  pivot_longer(cols = contains("alpha_raw_site"),
+               names_to = "site_id_int", values_to = "site_offset") %>% 
+  pivot_longer(cols = contains("alpha_raw_year"),
+               names_to = "year_id", values_to = "year_offset")
+
+posts_data = posts_pivoted %>% 
+  filter(.draw <= 500) %>% 
+  mutate(sample_id_int = as.integer(parse_number(sample_id)),
+         site_id_int = as.integer(parse_number(site_id_int)),
+         year_id = as.integer(parse_number(year_id)))  %>% 
+  right_join(dat, by = c("sample_id_int", "site_id_int", "year_id"))
+
+
+line_posts = posts_interaction %>% 
+  filter(.draw <= 1000) %>% 
+  expand_grid(dat %>% distinct(log_gpp_s)) %>% 
+  expand_grid(mat_s = dat %>% distinct(mat_s) %>% median_qi(mat_s) %>% 
+                select(-.width, -.point, -.interval) %>%
+                pivot_longer(cols = everything()) %>% pull()) %>% 
+  mutate(lambda = a + beta_mat*mat_s + beta_gpp*log_gpp_s + beta_gpp_mat*log_gpp_s*mat_s) %>% 
+  group_by(log_gpp_s, mat_s) %>% 
+  median_qi(lambda)
+
+sample_posts = posts_data %>% 
+  mutate(lambda = a + beta_mat*mat_s + beta_gpp*log_gpp_s + beta_gpp_mat*log_gpp_s*mat_s +
+           year_offset*sigma_year + sample_offset*sigma_sample + site_offset*sigma_site) %>% 
+  group_by(site_id, year, sample_id, log_gpp_s) %>%
+  median_qi(lambda)
+
+
+sample_posts %>% 
+  ggplot(aes(x = log_gpp_s, y = lambda)) + 
+  geom_pointrange(aes(ymin = .lower, ymax = .upper), 
+                  position = position_jitter(width = 0.1), size = 0.1) + 
+  geom_line(data = line_posts, aes(group = as.factor(log_gpp_s))) + 
+  geom_ribbon(data = line_posts, aes(ymin = .lower, ymax = .upper), alpha = 0.2) +
+  facet_wrap(~mat_s)
+
+fit_interaction
 
 # posts for ids
 
@@ -47,9 +100,24 @@ temp_posts_wrangled = wrangle_posts(model = fit_temponly, data = dat, name = "te
            year_offset) %>% 
   ungroup
 
+interactionsite_posts_wrangled = as_draws_df(fit_interaction_sites) %>% 
+  pivot_longer(cols = contains("raw_year"),
+               names_to = "year_id", values_to = "year_offset") %>% 
+  pivot_longer(cols = contains("raw_sample"),
+               names_to = "sample_id_int", values_to = "sample_offset") %>% 
+  mutate(sample_id_int = as.integer(parse_number(sample_id_int)),
+         year_id = as.integer(parse_number(year_id))) %>% 
+  right_join(dat %>% ungroup %>% distinct(year_id, sample_id_int)) %>% 
+  pivot_longer(cols = contains("raw_site"),
+               names_to = "site_id_int", values_to = "site_offset")  %>% 
+  mutate(site_id_int = as.integer(parse_number(site_id_int))) %>% 
+  right_join(dat %>% ungroup %>% distinct(year_id, sample_id_int, site_id_int), by = c("year_id", "sample_id_int", "site_id_int")) 
+  
+
+
 saveRDS(interaction_posts_wrangled, file = "posteriors/interaction_posts_wrangled.rds")
 saveRDS(temp_posts_wrangled, file = "posteriors/temp_posts_wrangled.rds")
-
+saveRDS(interactionsite_posts_wrangled, file = "posteriors/interactionsite_posts_wrangled.rds")
 
 id_summaries = id_posts %>% 
   group_by(ID, site_id, mat_s, log_gpp_s) %>% 

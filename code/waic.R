@@ -67,8 +67,10 @@ loo::waic(log_lik_matrix)
 # use real data --------------------------------------------
 fit_temponly = readRDS("models/fit_temponly.rds")
 fit_interaction = readRDS("models/fit_interaction.rds")
+fit_interaction_sites = readRDS(file = "models/fit_interaction_sites.rds")
 
-dat = readRDS(file = "data/macro_fish_mat_siteminmax.rds") 
+
+dat = readRDS(file = "data/macro_fish_mat_siteminmax.rds") %>% rownames_to_column()
 
 
 posts = as_draws_df(fit_temponly) %>% 
@@ -95,45 +97,85 @@ log_lik_matrix_temp = loglik_fit %>% ungroup %>%
   as.matrix() %>% unname()
 
 # interaction
-posts = as_draws_df(fit_temponly) %>% 
+posts = as_draws_df(fit_interaction) %>% 
   pivot_longer(cols = contains('alpha_raw_site'),
                names_to = "site_group", values_to = "site_offset") %>% 
   pivot_longer(cols = contains("alpha_raw_year"),
                names_to = "year_group", values_to = "year_offset") %>% 
   mutate(site_id_int = parse_number(site_group),
          year_id = parse_number(year_group)) %>%
-  filter(.draw <= 500) %>% 
-  right_join(dat %>% ungroup %>% distinct(mat_s, log_gpp_s, site_id_int, year_id)) %>% 
+  # filter(.draw <= 500) %>% 
+  semi_join(dat %>% distinct(site_id_int, year_id)) %>% 
+  left_join(dat %>% ungroup %>% distinct(mat_s, log_gpp_s, site_id_int, year_id)) %>% 
   mutate(lambda = a + beta_mat*mat_s + 
-           # beta_gpp*log_gpp_s + 
-           # beta_gpp_mat*log_gpp_s*mat_s + 
+           beta_gpp*log_gpp_s +
+           beta_gpp_mat*log_gpp_s*mat_s +
            sigma_year*year_offset + sigma_site*site_offset)
 
 loglik_fit = posts %>% 
-  # filter(.draw <= 200) %>% 
+  # filter(.draw <= 200) %>%
   right_join(dat %>% distinct(year_id, site_id_int, id, x, xmax, xmin, counts, .keep_all = T)) %>% 
   mutate(loglik = counts*(log((lambda+1) / ( xmax^(lambda+1) - xmin^(lambda+1))) + lambda*log(x)))
 
 log_lik_matrix_interaction = loglik_fit %>% ungroup %>% 
+  # filter(.draw <= 800) %>%
+  select(loglik, .draw, rowname) %>% 
+  pivot_wider(names_from = rowname, values_from = loglik) %>%
+  select(-.draw) %>% 
+  as.matrix() %>% unname()
+
+  
+# interaction sites
+posts = as_draws_df(fit_interaction_sites) %>%
+  filter(.draw <= 500) %>% 
+  pivot_longer(cols = contains("raw_year"),
+               names_to = "year_id", values_to = "year_offset") %>% 
+  pivot_longer(cols = contains("raw_sample"),
+               names_to = "sample_id_int", values_to = "sample_offset") %>% 
+  mutate(sample_id_int = as.integer(parse_number(sample_id_int)),
+         year_id = as.integer(parse_number(year_id))) %>% 
+  right_join(dat %>% ungroup %>% distinct(year_id, sample_id_int)) %>% 
+  pivot_longer(cols = contains("raw_site"),
+               names_to = "site_id_int", values_to = "site_offset")  %>% 
+  mutate(site_id_int = as.integer(parse_number(site_id_int))) %>% 
+  right_join(dat %>% ungroup %>% distinct(mat_s, log_gpp_s, site_id_int, year_id, sample_id_int)) %>% 
+  mutate(lambda = a + beta_mat*mat_s + 
+           beta_gpp*log_gpp_s +
+           beta_gpp_mat*log_gpp_s*mat_s +
+           sigma_year*year_offset + sigma_site*site_offset)
+
+loglik_fit = posts %>% 
+  filter(.draw <= 200) %>%
+  right_join(dat %>% distinct(year_id, site_id_int, sample_id_int, id, x, xmax, xmin, counts, .keep_all = T)) %>% 
+  mutate(loglik = counts*(log((lambda+1) / ( xmax^(lambda+1) - xmin^(lambda+1))) + lambda*log(x)))
+
+log_lik_matrix_interactionsites = loglik_fit %>% ungroup %>% 
   # filter(.draw <= 800) %>%
   select(loglik, .draw, id) %>% 
   pivot_wider(names_from = id, values_from = loglik) %>%
   select(-.draw) %>% 
   as.matrix() %>% unname()
 
-
+# compute waic
+loglik_loglik = extract_log_lik(fit_interaction_loglik)
+loo::waic(loglik_loglik)
 waic_temp = loo::waic(log_lik_matrix_temp)
 waic_interaction = loo::waic(log_lik_matrix_interaction)
-
+waic_interactionsites = loo::waic(log_lik_matrix_interactionsites)
 
 waic_temp$estimates[[3]] - waic_interaction$estimates[[3]]
 
-waic_tbl = tibble(waic = c(waic_temp$estimates[[3]], waic_interaction$estimates[[3]]),
-       se = c(waic_temp$estimates[[6]], waic_interaction$estimates[[6]]),
-       model = c("temp", "interaction"))
+waic_tbl = tibble(waic = c(waic_temp$estimates[[3]], waic_interaction$estimates[[3]], 
+                           waic_interactionsites$estimates[[3]]),
+       se = c(waic_temp$estimates[[6]], waic_interaction$estimates[[6]],
+              waic_interactionsites$estimates[[6]]),
+       model = c("temp", "interaction", "interactionsites"))
 
 waic_tbl %>% 
   ggplot(aes(x = model, y = waic, ymin = waic - se, ymax = waic + se)) + 
   geom_pointrange()
 
 # 
+
+
+plot(loglik_loglik[,45] ~ log_lik_matrix_interaction[,45])

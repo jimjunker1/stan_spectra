@@ -8,7 +8,58 @@ rstan_options("auto_write" = TRUE)
 
 set.seed(1234987)
 
+
+# single sample -----------------------------------------------------------
+# precompile code
+fit_model = stan_model("models/old/b_paretocounts_singlesample.stan")
+
+n_sim = 1000
+xmax = 1000
+xmin = 1
+n_bs = 10
+b = seq(-2.2, -1.2, length.out = n_bs)
+
+x = sizeSpectra::rPLB(1000, -1.4, xmin = xmin, xmax = xmax)
+
+sim_data = tibble(xmax = xmax,
+       xmin = xmin,
+       counts = 1) %>% 
+  expand_grid(x = x)
+
+
+stan_dat <- list(x = sim_data$x,
+                 N = nrow(sim_data),
+                 counts = sim_data$counts,
+                 xmax = sim_data$xmax,
+                 xmin = sim_data$xmin)
+
+fit <- sampling(object = fit_model,
+                data = stan_dat,
+                iter = 100,
+                chains = 1,
+                open_progress = F,
+                verbose = F)
+
+
+
 # single samples ----------------------------------------------------------
+
+# precompile code
+fit_model = stan_model("models/old/b_paretocounts_singlesample.stan")
+
+# simulate
+n_sim = 1000
+xmax = 1000
+xmin = 1
+n_bs = 10
+b = seq(-2.2, -1.2, length.out = n_bs)
+b_true = b
+
+sim_b = tibble(xmax = xmax, xmin = xmin,
+               b = b) %>% 
+  mutate(group = as.integer(1:nrow(.)))
+
+# simulate single samples ----------------------------------------------------------
 
 # precompile code
 fit_model = stan_model("models/old/b_paretocounts_singlesample.stan")
