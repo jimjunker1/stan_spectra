@@ -29,13 +29,12 @@ macro_fish_mat_siteminmax <- macro_fish_mat %>% # this is really site max and gl
 saveRDS(macro_fish_mat_siteminmax, file = "data/macro_fish_mat_siteminmax.rds")
 
 
-
 # biomass -----------------------------------------------------------------
 
 biomass = macro_fish_mat %>% # this is really site max and global min
   left_join(gpp) %>% 
   filter(!is.na(log_gpp_s)) %>% 
-  filter(animal_type == "macroinvertebrates") %>% 
+  # filter(animal_type == "macroinvertebrates") %>% 
   mutate(dw_total = x*counts) %>% 
   group_by(mat_s, log_gpp_s, gpp_s, gpp, log_gpp, site_id, year, ID, mat_site, sdat_site) %>% 
   summarize(sample_biomass = sum(dw_total)/1000)
@@ -43,3 +42,34 @@ biomass = macro_fish_mat %>% # this is really site max and global min
 saveRDS(biomass, file = "data/biomass.rds")
 
 
+# only macroinverts -----------------------------------------------------------------
+
+fish_biomass = macro_fish_mat %>% # this is really site max and global min
+  left_join(gpp) %>% 
+  filter(!is.na(log_gpp_s)) %>% 
+  filter(animal_type != "macroinvertebrates") %>% 
+  mutate(dw_total = x*counts) %>% 
+  group_by(mat_s, log_gpp_s, gpp_s, gpp, log_gpp, site_id, year, ID, mat_site, sdat_site) %>% 
+  summarize(fish_total_biomass = sum(dw_total)/1000) %>% 
+  ungroup %>% 
+  distinct(ID, fish_total_biomass)
+
+macro_only_mat_siteminmax <- macro_fish_mat %>% # this is really site max and global min
+  left_join(gpp) %>% 
+  filter(!is.na(log_gpp_s)) %>% 
+  filter(animal_type == "macroinvertebrates") %>% 
+  group_by(mat_s, log_gpp_s, gpp_s, gpp, log_gpp, site_id, year, ID, mat_site, sdat_site, dw, x) %>% 
+  summarize(counts = sum(counts)) %>% 
+  ungroup %>% 
+  mutate(sample_id_int = as.integer(as.factor(ID))) %>% 
+  ungroup %>%  
+  mutate(xmin = min(dw))%>% 
+  group_by(site_id) %>%
+  mutate(xmax = max(dw)) %>% 
+  ungroup %>% 
+  mutate(id = 1:nrow(.),
+         year_id = as.integer(as.factor(year)),
+         site_id_int = as.integer(as_factor(site_id))) %>% 
+  left_join(fish_biomass)
+
+saveRDS(macro_only_mat_siteminmax, file = "data/macro_only_mat_siteminmax.rds")
